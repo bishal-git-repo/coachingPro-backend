@@ -141,16 +141,17 @@ export async function sendFeeSlip(req, res) {
     [id, adminId]
   );
   if (!fee) return res.status(404).json({ success: false, message: 'Fee not found' });
-
-  const pdfBuffer = await generateFeeSlipPDF({
+  const slipData = {
     receiptNumber: fee.receipt_number, studentName: fee.student_name,
     studentEmail: fee.student_email, batchName: fee.batch_name,
     className: fee.class_name, coachingName: fee.coaching_name,
     monthYear: fee.month_year, amount: fee.amount, status: fee.status,
     dueDate: fee.due_date, paidDate: fee.paid_date,
-  });
-
-  await sendFeeSlipEmail({ to: fee.student_email, name: fee.student_name, coachingName: fee.coaching_name, pdfBuffer });
+  };
+  const pdfBuffer = await generateFeeSlipPDF(slipData);
+  
+  await sendFeeSlipEmail({ to: fee.student_email, name: fee.student_name, coachingName: fee.coaching_name, slipData, pdfBuffer });
+  
   await query(`UPDATE fees SET slip_sent=1, slip_sent_at=NOW() WHERE id=?`, [id]);
 
   res.json({ success: true, message: 'Fee slip sent to student email' });

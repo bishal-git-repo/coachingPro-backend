@@ -100,16 +100,16 @@ export async function createStudent(req, res) {
 export async function updateStudent(req, res) {
   const adminId = req.user.id;
   const { id } = req.params;
-  const { name, phone, parent_name, parent_phone, address, date_of_birth, gender, roll_number, status } = req.body;
+  const { name, email, phone, parent_name, parent_phone, address, date_of_birth, gender, roll_number, status } = req.body;
 
   const existing = await query(`SELECT id FROM students WHERE id=? AND admin_id=?`, [id, adminId]);
   if (!existing.length) return res.status(404).json({ success: false, message: 'Student not found' });
 
   await query(
-    `UPDATE students SET name=COALESCE(?,name), phone=COALESCE(?,phone), parent_name=COALESCE(?,parent_name),
+    `UPDATE students SET name=COALESCE(?,name), email=COALESCE(?,email), phone=COALESCE(?,phone), parent_name=COALESCE(?,parent_name),
      parent_phone=COALESCE(?,parent_phone), address=COALESCE(?,address), date_of_birth=COALESCE(?,date_of_birth),
      gender=COALESCE(?,gender), roll_number=COALESCE(?,roll_number), status=COALESCE(?,status) WHERE id=?`,
-    [name, phone, parent_name, parent_phone, address, date_of_birth, gender, roll_number, status, id]
+    [name, email, phone, parent_name, parent_phone, address, date_of_birth, gender, roll_number, status, id]
   );
 
   const [updated] = await query(`SELECT * FROM students WHERE id=?`, [id]);
