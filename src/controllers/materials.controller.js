@@ -1,7 +1,18 @@
-import path from 'path';
-import fs from 'fs';
 import { query } from '../config/db.js';
+import { s3, PDF_BUCKET, VIDEO_BUCKET } from '../middleware/upload.middleware.js';
+import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+// ─── Free Plan Limits ─────────────────────────────────────────
+const FREE_PDF_LIMIT   = 15;
+const FREE_VIDEO_LIMIT = 5;
+
+// Get bucket name from file_type
+function getBucketForType(fileType) {
+  return fileType === 'video' ? VIDEO_BUCKET : PDF_BUCKET;
+}
+
+// ─── List Materials ───────────────────────────────────────────
 export async function listMaterials(req, res) {
   const adminId = req.user.admin_id || req.user.id;
   const { batch_id, class_id, file_type } = req.query;
@@ -13,9 +24,9 @@ export async function listMaterials(req, res) {
     WHERE sm.admin_id=? AND sm.is_active=1`;
   const params = [adminId];
 
-  if (batch_id) { sql += ` AND sm.batch_id=?`; params.push(batch_id); }
-  if (class_id) { sql += ` AND (sm.class_id=? OR b.class_id=?)`; params.push(class_id, class_id); }
-  if (file_type) { sql += ` AND sm.file_type=?`; params.push(file_type); }
+  if (batch_id) { sql += ` AND sm.batch_id=?`;                      params.push(batch_id); }
+  if (class_id) { sql += ` AND (sm.class_id=? OR b.class_id=?)`;    params.push(class_id, class_id); }
+  if (file_type){ sql += ` AND sm.file_type=?`;                      params.push(file_type); }
 
   sql += ` ORDER BY sm.created_at DESC`;
 
@@ -23,79 +34,137 @@ export async function listMaterials(req, res) {
   res.json({ success: true, data: materials });
 }
 
+// ─── Get Single Material ──────────────────────────────────────
 export async function getMaterial(req, res) {
-  const { id } = req.params;
-  const adminId = req.user.admin_id || req.user.id;
+  const { id }    = req.params;
+  const adminId   = req.user.admin_id || req.user.id;
 
-  const rows = await query(`SELECT * FROM study_materials WHERE id=? AND admin_id=?`, [id, adminId]);
+  const rows = await query(
+    `SELECT * FROM study_materials WHERE id=? AND admin_id=?`,
+    [id, adminId]
+  );
   if (!rows[0]) return res.status(404).json({ success: false, message: 'Material not found' });
 
   res.json({ success: true, data: rows[0] });
 }
 
+// ─── Upload Material ──────────────────────────────────────────
 export async function uploadMaterial(req, res) {
-  // For teachers, use their admin_id so materials are associated with the right admin
-  const adminId = req.user.admin_id || req.user.id;
+  const adminId    = req.user.admin_id || req.user.id;
   const uploaderId = req.user.id;
 
   if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
 
-  const { title, description, batch_id, class_id } = req.body;
-  const { filename, mimetype, size, path: filePath } = req.file;
+  // S3 multer puts these on req.file
+  const { key, bucket, size, mimetype, originalname, location } = req.file;
 
-  // Verify teacher is assigned to this batch if teacher role
+  // Determine file type
+  let fileType = 'other';
+  if (mimetype === 'application/pdf')    fileType = 'pdf';
+  else if (mimetype.startsWith('video/')) fileType = 'video';
+  else if (mimetype.startsWith('image/')) fileType = 'image';
+
+  // ─── Free Plan Limit Check ───────────────────────────────────
+  // Check AFTER upload so we have the file type; delete from S3 if over limit
+  if (req.user.plan !== 'paid' && req.user.role === 'admin') {
+    if (fileType === 'pdf') {
+      const [{ cnt }] = await query(
+        `SELECT COUNT(*) as cnt FROM study_materials WHERE admin_id=? AND file_type='pdf' AND is_active=1`,
+        [adminId]
+      );
+      if (cnt >= FREE_PDF_LIMIT) {
+        // Delete the just-uploaded file from S3 to avoid orphans
+        await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+        return res.status(402).json({
+          success: false,
+          message: `Free plan limit: ${FREE_PDF_LIMIT} PDFs. Upgrade to Paid Plan to upload more.`,
+          code: 'LIMIT_REACHED',
+        });
+      }
+    } else if (fileType === 'video') {
+      const [{ cnt }] = await query(
+        `SELECT COUNT(*) as cnt FROM study_materials WHERE admin_id=? AND file_type='video' AND is_active=1`,
+        [adminId]
+      );
+      if (cnt >= FREE_VIDEO_LIMIT) {
+        await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+        return res.status(402).json({
+          success: false,
+          message: `Free plan limit: ${FREE_VIDEO_LIMIT} videos. Upgrade to Paid Plan to upload more.`,
+          code: 'LIMIT_REACHED',
+        });
+      }
+    }
+  }
+
+  const { title, description, batch_id, class_id } = req.body;
+
+  // Verify teacher is assigned to this batch
   if (req.user.role === 'teacher' && batch_id) {
     const assigned = await query(
       `SELECT bt.batch_id FROM batch_teachers bt WHERE bt.batch_id=? AND bt.teacher_id=?`,
       [batch_id, uploaderId]
     );
-    if (!assigned.length) return res.status(403).json({ success: false, message: 'You are not assigned to this batch' });
+    if (!assigned.length) {
+      // Clean up S3 file
+      await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+      return res.status(403).json({ success: false, message: 'You are not assigned to this batch' });
+    }
   }
 
-  let fileType = 'other';
-  if (mimetype === 'application/pdf') fileType = 'pdf';
-  else if (mimetype.startsWith('video/')) fileType = 'video';
-  else if (mimetype.startsWith('image/')) fileType = 'image';
-
-  const relativePath = filePath.replace(process.cwd(), '');
-
+  // Save S3 key in file_path so we can look it up for delete/stream
   const result = await query(
-    `INSERT INTO study_materials (admin_id, batch_id, class_id, title, description, file_type, file_path, file_size, file_name, uploaded_by)
+    `INSERT INTO study_materials
+       (admin_id, batch_id, class_id, title, description, file_type, file_path, file_size, file_name, uploaded_by)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [adminId, batch_id||null, class_id||null, title, description||null, fileType, relativePath, size, req.file.originalname, uploaderId]
+    [adminId, batch_id||null, class_id||null, title, description||null, fileType, key, size, originalname, uploaderId]
   );
-  const id = result.insertId;
 
   res.status(201).json({
     success: true,
-    message: 'Material uploaded',
-    data: { id, title, file_type: fileType, file_name: req.file.originalname },
+    message: 'Material uploaded to S3',
+    data: {
+      id:        result.insertId,
+      title,
+      file_type: fileType,
+      file_name: originalname,
+      s3_url:    location,  // public or pre-signed — useful for immediate preview
+    },
   });
 }
 
+// ─── Delete Material ──────────────────────────────────────────
 export async function deleteMaterial(req, res) {
   const adminId = req.user.admin_id || req.user.id;
-  const { id } = req.params;
+  const { id }  = req.params;
 
-  const rows = await query(`SELECT file_path FROM study_materials WHERE id=? AND admin_id=?`, [id, adminId]);
+  const rows = await query(
+    `SELECT file_path, file_type FROM study_materials WHERE id=? AND admin_id=?`,
+    [id, adminId]
+  );
   if (!rows[0]) return res.status(404).json({ success: false, message: 'Material not found' });
 
-  // Delete file from disk
+  const { file_path: s3Key, file_type } = rows[0];
+  const bucket = getBucketForType(file_type);
+
+  // Delete from S3
   try {
-    const fullPath = path.join(process.cwd(), rows[0].file_path);
-    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: s3Key }));
   } catch (e) {
-    console.error('File delete error:', e.message);
+    console.error('S3 delete error:', e.message);
+    // Still proceed to delete from DB even if S3 fails
   }
 
   await query(`DELETE FROM study_materials WHERE id=?`, [id]);
   res.json({ success: true, message: 'Material deleted' });
 }
 
-// Stream video/serve file
+// ─── Serve / Stream File (via S3 Pre-signed URL) ──────────────
+// Instead of piping through the server, we generate a short-lived
+// pre-signed URL and redirect the client directly to S3.
+// This saves EC2 bandwidth and is much faster for videos.
 export async function serveFile(req, res) {
-  const { id } = req.params;
-  const adminId = req.user.admin_id || req.user.id;
+  const { id }    = req.params;
 
   const rows = await query(
     `SELECT sm.* FROM study_materials sm WHERE sm.id=?`,
@@ -103,44 +172,26 @@ export async function serveFile(req, res) {
   );
   if (!rows[0]) return res.status(404).json({ success: false, message: 'File not found' });
 
-  const filePath = path.join(process.cwd(), rows[0].file_path);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, message: 'File not on disk' });
+  const { file_path: s3Key, file_type, file_name } = rows[0];
+  const bucket = getBucketForType(file_type);
 
-  const stat = fs.statSync(filePath);
-  const fileSize = stat.size;
+  const contentTypes = {
+    pdf:   'application/pdf',
+    video: 'video/mp4',
+    image: 'image/jpeg',
+  };
 
-  if (rows[0].file_type === 'video') {
-    // Range request support for video streaming
-    const range = req.headers.range;
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      const chunkSize = end - start + 1;
+  // Pre-signed URL valid for 1 hour (3600 seconds)
+  const command = new GetObjectCommand({
+    Bucket:                     bucket,
+    Key:                        s3Key,
+    ResponseContentType:        contentTypes[file_type] || 'application/octet-stream',
+    ResponseContentDisposition: `inline; filename="${file_name}"`,
+  });
 
-      res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunkSize,
-        'Content-Type': 'video/mp4',
-      });
+  const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
 
-      fs.createReadStream(filePath, { start, end }).pipe(res);
-    } else {
-      res.writeHead(200, {
-        'Content-Length': fileSize,
-        'Content-Type': 'video/mp4',
-      });
-      fs.createReadStream(filePath).pipe(res);
-    }
-  } else {
-    // PDF or other files
-    const contentTypes = {
-      pdf: 'application/pdf',
-      image: 'image/jpeg',
-    };
-    res.setHeader('Content-Type', contentTypes[rows[0].file_type] || 'application/octet-stream');
-    res.setHeader('Content-Length', fileSize);
-    fs.createReadStream(filePath).pipe(res);
-  }
+  // Redirect client directly to S3 — no server-side streaming needed
+  // res.redirect(302, signedUrl);
+  res.json({ success: true, url: signedUrl });
 }

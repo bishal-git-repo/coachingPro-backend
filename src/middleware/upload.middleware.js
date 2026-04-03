@@ -1,31 +1,30 @@
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+import multerS3 from 'multer-s3';
+import { S3Client } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
-
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    let subDir = 'misc';
-    if (file.mimetype.startsWith('image/')) subDir = 'images';
-    else if (file.mimetype === 'application/pdf') subDir = 'pdfs';
-    else if (file.mimetype.startsWith('video/')) subDir = 'videos';
-
-    const dir = path.join(UPLOAD_DIR, subDir);
-    ensureDir(dir);
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${uuidv4()}${ext}`);
+// ─── S3 Client Setup ─────────────────────────────────────────
+const s3 = new S3Client({
+  region: process.env.AWS_REGION || 'ap-south-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
 });
 
+// Two separate S3 buckets — one for PDFs, one for Videos
+export const PDF_BUCKET   = process.env.AWS_S3_PDF_BUCKET;
+export const VIDEO_BUCKET = process.env.AWS_S3_VIDEO_BUCKET;
+
+// Determine which bucket based on file type
+function getBucket(file) {
+  if (file.mimetype === 'application/pdf') return PDF_BUCKET;
+  if (file.mimetype.startsWith('video/'))  return VIDEO_BUCKET;
+  return PDF_BUCKET; // fallback for images/misc
+}
+
+// ─── File Filter ─────────────────────────────────────────────
 function fileFilter(req, file, cb) {
   const allowed = [
     'image/jpeg', 'image/png', 'image/webp', 'image/gif',
@@ -39,10 +38,29 @@ function fileFilter(req, file, cb) {
   }
 }
 
-const MAX_SIZE = parseInt(process.env.MAX_FILE_SIZE_MB || '100') * 1024 * 1024;
+// ─── S3 Storage ──────────────────────────────────────────────
+const s3Storage = multerS3({
+  s3,
+  bucket: (req, file, cb) => cb(null, getBucket(file)),
+  contentType: multerS3.AUTO_CONTENT_TYPE,
+  key: (req, file, cb) => {
+    const ext    = path.extname(file.originalname).toLowerCase();
+    const folder = file.mimetype.startsWith('video/') ? 'videos' : 'pdfs';
+    cb(null, `${folder}/${uuidv4()}${ext}`);
+  },
+});
 
-export const upload = multer({ storage, fileFilter, limits: { fileSize: MAX_SIZE } });
+const MAX_SIZE = parseInt(process.env.MAX_FILE_SIZE_MB || '500') * 1024 * 1024;
 
-export const uploadPhoto = upload.single('photo');
+export const upload = multer({
+  storage: s3Storage,
+  fileFilter,
+  limits: { fileSize: MAX_SIZE },
+});
+
+export const uploadPhoto    = upload.single('photo');
 export const uploadMaterial = upload.single('file');
-export const uploadLogo = upload.single('logo');
+export const uploadLogo     = upload.single('logo');
+
+// Export s3 client so controllers can delete/presign
+export { s3 };
