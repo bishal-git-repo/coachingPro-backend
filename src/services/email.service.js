@@ -145,3 +145,36 @@ export async function sendWelcomeEmail({ to, name, coachingName }) {
 }
 
 export default { sendCredentialsEmail, sendFeeSlipEmail, sendWelcomeEmail };
+
+// ─── Contact Form Notification to Admin ──────────────────────
+export async function sendContactNotification({ id, name, email, subject, message }) {
+  const adminEmail = process.env.SMTP_USER;
+  if (!adminEmail) return;
+
+  const html = `
+    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:560px;margin:auto;padding:32px;">
+      <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
+        <h1 style="color:#fff;margin:0;font-size:20px;">📬 New Contact Form Submission</h1>
+        <p style="color:#bfdbfe;margin:8px 0 0;">CoachingPro — Submission #${id}</p>
+      </div>
+      <div style="background:#fff;padding:28px;border-radius:0 0 12px 12px;box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <tr><td style="padding:10px 0;color:#64748b;width:100px;border-bottom:1px solid #f1f5f9;">Name</td><td style="padding:10px 0;font-weight:600;border-bottom:1px solid #f1f5f9;">${name}</td></tr>
+          <tr><td style="padding:10px 0;color:#64748b;border-bottom:1px solid #f1f5f9;">Email</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;"><a href="mailto:${email}" style="color:#2563eb;">${email}</a></td></tr>
+          <tr><td style="padding:10px 0;color:#64748b;border-bottom:1px solid #f1f5f9;">Subject</td><td style="padding:10px 0;font-weight:600;border-bottom:1px solid #f1f5f9;">${subject}</td></tr>
+          <tr><td style="padding:10px 0;color:#64748b;vertical-align:top;">Message</td><td style="padding:10px 0;line-height:1.6;">${message.replace(/\n/g, '<br/>')}</td></tr>
+        </table>
+        <div style="margin-top:20px;padding:12px 16px;background:#f8fafc;border-radius:8px;font-size:12px;color:#94a3b8;">
+          Reply directly to this email to respond to ${name}.
+        </div>
+      </div>
+    </div>`;
+
+  await getTransporter().sendMail({
+    from:     process.env.SMTP_FROM,
+    to:       adminEmail,
+    replyTo:  email,           // clicking Reply goes to the user, not yourself
+    subject:  `[CoachingPro Contact] ${subject}`,
+    html,
+  });
+}

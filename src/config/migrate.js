@@ -293,6 +293,21 @@ const tables = [
     INDEX idx_admin (admin_id)
   ) ENGINE=InnoDB`,
 
+  // ─── CONTACT FORM SUBMISSIONS ───────────────────────────────
+  `CREATE TABLE IF NOT EXISTS contact_submissions (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL,
+    email      VARCHAR(150) NOT NULL,
+    subject    VARCHAR(200) NOT NULL,
+    message    TEXT NOT NULL,
+    status     ENUM('new','read','replied','closed') NOT NULL DEFAULT 'new',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_status  (status),
+    INDEX idx_email   (email),
+    INDEX idx_created (created_at)
+  ) ENGINE=InnoDB`,
+
   // ─── REFRESH TOKENS ─────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS refresh_tokens (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,

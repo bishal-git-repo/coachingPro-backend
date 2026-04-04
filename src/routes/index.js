@@ -13,6 +13,7 @@ import * as attendance from '../controllers/attendance.controller.js';
 import * as fees from '../controllers/fees.controller.js';
 import * as materials from '../controllers/materials.controller.js';
 import * as dashboard from '../controllers/dashboard.controller.js';
+import * as contact  from '../controllers/contact.controller.js';
 
 const router = express.Router();
 
@@ -154,6 +155,15 @@ router.put('/admin/profile', requireAuth('admin'), async (req, res, next) => {
     res.json({ success: true, message: 'Profile updated' });
   } catch(err) { next(err); }
 });
+
+// ─── CONTACT FORM ────────────────────────────────────────────
+// Public — no auth needed (visitors submit from landing page)
+router.post('/contact', contact.submitContact);
+
+// Admin only — view and manage submissions
+router.get('/contact',         requireAuth('admin'), contact.listContacts);
+router.patch('/contact/:id',   requireAuth('admin'), contact.updateContactStatus);
+router.delete('/contact/:id',  requireAuth('admin'), contact.deleteContact);
 
 export default router;
 

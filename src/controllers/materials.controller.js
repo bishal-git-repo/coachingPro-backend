@@ -191,7 +191,7 @@ export async function serveFile(req, res) {
 
   const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
 
-  // Redirect client directly to S3 — no server-side streaming needed
-  // res.redirect(302, signedUrl);
+  // Return URL as JSON — frontend uses it directly.
+  // DO NOT redirect (res.redirect) — that causes CORS errors on cross-origin redirects.
   res.json({ success: true, url: signedUrl });
 }
