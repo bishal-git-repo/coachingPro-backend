@@ -16,7 +16,7 @@ const poolConfig = {
   // Security settings
   multipleStatements: false,
   dateStrings: true,
-  collation: 'UTF8MB4_UNICODE_CI',              // ← add this
+  // collation: 'UTF8MB4_UNICODE_CI',              // ← add this
   charset: 'UTF8MB4_UNICODE_CI',              // ← add this
   timezone: '+00:00', 
 };
