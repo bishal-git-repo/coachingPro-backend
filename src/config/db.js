@@ -16,6 +16,8 @@ const poolConfig = {
   // Security settings
   multipleStatements: false,
   dateStrings: true,
+  charset: 'utf8mb4',              // ← add this
+  timezone: '+00:00', 
 };
 
 const pool = mysql.createPool(poolConfig);
