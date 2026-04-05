@@ -2,7 +2,7 @@ import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const createDatabase = `CREATE DATABASE IF NOT EXISTS \`coaching_management\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`;
+const createDatabase = `CREATE DATABASE IF NOT EXISTS \`coaching_db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`;
 
 const tables = [
   // ─── ADMINS ─────────────────────────────────────────────────
