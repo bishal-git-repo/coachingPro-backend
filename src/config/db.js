@@ -22,6 +22,11 @@ const poolConfig = {
 
 const pool = mysql.createPool(poolConfig);
 
+// ✅ Add this — forces utf8mb4 on every new connection
+pool.pool.on('connection', (connection) => {
+  connection.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+});
+
 // Test connection on startup
 export async function testConnection() {
   try {
