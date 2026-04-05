@@ -17,8 +17,8 @@ const poolConfig = {
   multipleStatements: false,
   dateStrings: true,
   // collation: 'UTF8MB4_UNICODE_CI',              // ← add this
-  charset: 'UTF8MB4_UNICODE_CI',              // ← add this
-  timezone: '+00:00', 
+  // charset: 'UTF8MB4_UNICODE_CI',              // ← add this
+  // timezone: '+00:00', 
 };
 
 const pool = mysql.createPool(poolConfig);
