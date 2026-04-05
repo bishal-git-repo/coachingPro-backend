@@ -43,7 +43,7 @@ export async function saveRefreshToken(userId, userType, token) {
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   await query(
     `INSERT INTO refresh_tokens (user_id, user_type, token_hash, expires_at) VALUES (?,?,?,?)`,
-    [uuidv4(), userId, userType, tokenHash, expiresAt]
+    [userId, userType, tokenHash, expiresAt]
   );
 }
 
