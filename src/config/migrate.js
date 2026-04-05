@@ -332,7 +332,7 @@ async function migrate() {
 
   try {
     await conn.query(createDatabase);
-    await conn.query('USE `coaching_management`');
+    await conn.query('USE `coaching_db`');
     console.log('📦 Database selected');
 
     for (const sql of tables) {
