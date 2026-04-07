@@ -4,10 +4,16 @@ import { hashPassword } from '../utils/auth.js';
 import { sendCredentialsEmail } from '../services/email.service.js';
 
 // ─── LIST STUDENTS ────────────────────────────────────────────
-export async function listStudents(req, res) {
+export async function listStudents(req, res) {  
   const adminId = req.user.admin_id || req.user.id;
-  const { search, status, batch_id, page = 1, limit = 50 } = req.query;
-  const offset = (page - 1) * limit;
+  // const { search, status, batch_id, page = 1, limit = 50 } = req.query;
+  // const offset = (page - 1) * limit;
+    const { search, status, batch_id } = req.query;
+  
+  // Parse BOTH to integers immediately
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 50;
+  const offset = (page - 1) * limit;   // now both are integers 
 
   let sql = `SELECT s.*, 
     GROUP_CONCAT(b.name SEPARATOR ', ') as batch_names
