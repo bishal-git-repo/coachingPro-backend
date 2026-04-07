@@ -30,9 +30,9 @@ export async function listStudents(req, res) {
   sql += ` GROUP BY s.id ORDER BY s.created_at DESC LIMIT ? OFFSET ?`;
   params.push(parseInt(limit), offset);
 
+  console.log('SQL PARAMS:', params);
+console.log('PARAM TYPES:', params.map(p => typeof p));
   const students = await query(sql, params);
-    console.log('SQL PARAMS:', params);
-  console.log('PARAM TYPES:', params.map(p => typeof p));
 
   const countSql = `SELECT COUNT(DISTINCT s.id) as total FROM students s
     LEFT JOIN batch_students bs ON bs.student_id = s.id
