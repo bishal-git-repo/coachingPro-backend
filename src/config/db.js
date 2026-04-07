@@ -43,6 +43,7 @@ export async function testConnection() {
 
 // Helper: execute query with automatic connection management
 export async function query(sql, params = []) {
+  // const [rows] = await pool.execute(sql, params); //we comment because it create problem in some queries like group_contra
   const [rows] = await pool.query(sql, params);
   return rows;
 }
