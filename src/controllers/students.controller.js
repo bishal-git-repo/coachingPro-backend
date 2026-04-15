@@ -89,7 +89,7 @@ export async function createStudent(req, res) {
     sendCredentialsEmail({
       to: email, name, role: 'student', email, password,
       coachingName: admin.coaching_name,
-      loginUrl: `${frontendUrl}/login/student`,
+      loginUrl: `${frontendUrl}/login`,
     }).catch(console.error);
   }
 
@@ -165,7 +165,7 @@ export async function resendStudentCredentials(req, res) {
     to: student.email, name: student.name, role: 'student',
     email: student.email, password: tempPassword,
     coachingName: admin.coaching_name,
-    loginUrl: `${frontendUrl}/login/student`,
+    loginUrl: `${frontendUrl}/login`,
   });
 
   res.json({ success: true, message: 'Credentials sent to student email' });

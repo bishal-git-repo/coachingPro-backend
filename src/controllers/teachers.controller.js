@@ -65,7 +65,7 @@ export async function createTeacher(req, res) {
     sendCredentialsEmail({
       to: email, name, role: 'teacher', email, password,
       coachingName: admin.coaching_name,
-      loginUrl: `${frontendUrl}/login/teacher`,
+      loginUrl: `${frontendUrl}/login`,
     }).catch(console.error);
   }
 
@@ -125,7 +125,7 @@ export async function resendTeacherCredentials(req, res) {
     to: teacher.email, name: teacher.name, role: 'teacher',
     email: teacher.email, password: tempPassword,
     coachingName: admin.coaching_name,
-    loginUrl: `${frontendUrl}/login/teacher`,
+    loginUrl: `${frontendUrl}/login`,
   });
 
   res.json({ success: true, message: 'Credentials sent to teacher email' });
